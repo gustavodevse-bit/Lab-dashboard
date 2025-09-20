@@ -3,6 +3,7 @@ import os
 import psycopg2
 import psycopg2.extras
 from datetime import datetime
+import uuid
 
 app = Flask(__name__)
 app.secret_key = 'sua_chave_secreta_aqui'
@@ -87,43 +88,103 @@ def execute_query(query, params=None, fetchall=False, fetchone=False):
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
             cursor.execute(query, params)
-            conn.commit()
+            if conn.autocommit == False:
+                conn.commit()
             if fetchall:
                 return cursor.fetchall()
             if fetchone:
                 return cursor.fetchone()
     except Exception as e:
         print(f"Erro ao executar a query: {e}")
-        conn.rollback()
+        if conn:
+            conn.rollback()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
     return [] if fetchall else None
-
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     init_db()
 
     if request.method == "POST":
-        # ... (Sua lógica de adicionar item) ...
-        # (Aqui você deve substituir as chamadas a 'cursor.execute' por 'execute_query')
-        # ...
+        try:
+            nome = request.form["nome"].strip()
+            tipo = request.form["tipo"]
+            categoria = request.form.get("categoria", "").strip()
+            usuario = request.form.get("usuario", "Desconhecido")
+            
+            if tipo == "Consumivel":
+                qtd = int(request.form.get("quantidade", 1))
+                if qtd <= 0:
+                    flash("Erro: A quantidade de um item consumível deve ser maior que zero.", "error")
+                    return redirect(url_for("index"))
 
-    historico_hoje = execute_query("""
-        SELECT h.*, i.nome as item_nome FROM historico h
-        LEFT JOIN itens i ON h.item_id = i.id
-        WHERE date(h.datahora) = CURRENT_DATE
-        ORDER BY h.datahora DESC
-    """, fetchall=True)
+                item = execute_query("SELECT id, quantidade, tipo FROM itens WHERE nome=%s AND tipo=%s", (nome, tipo), fetchone=True)
+                
+                if item:
+                    nova_quantidade = item["quantidade"] + qtd
+                    execute_query("UPDATE itens SET quantidade = %s WHERE id = %s", (nova_quantidade, item["id"]))
+                    execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, datahora) VALUES (%s, %s, %s, %s, %s, %s)",
+                                  (item["id"], nome, 'entrada', qtd, usuario, datetime.now()))
+                else:
+                    item_id = str(uuid.uuid4())
+                    execute_query("INSERT INTO itens (id, nome, quantidade, tipo, categoria) VALUES (%s, %s, %s, %s, %s)",
+                                  (item_id, nome, qtd, tipo, categoria))
+                    execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, datahora) VALUES (%s, %s, %s, %s, %s, %s)",
+                                  (item_id, nome, 'entrada', qtd, usuario, datetime.now()))
+
+            elif tipo == "Duravel":
+                status = "Disponível"
+                item_id = str(uuid.uuid4())
+                execute_query("INSERT INTO itens (id, nome, quantidade, tipo, categoria, status) VALUES (%s, %s, %s, %s, %s, %s)",
+                               (item_id, nome, 1, tipo, categoria, status))
+                execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, datahora) VALUES (%s, %s, %s, %s, %s, %s)",
+                               (item_id, nome, 'entrada', 1, usuario, datetime.now()))
+
+            flash("Item adicionado com sucesso!", "success")
+        except (psycopg2.Error, ValueError) as e:
+            flash(f"Ocorreu um erro ao adicionar o item: {e}", "error")
+            print(f"Erro ao processar formulário: {e}")
+        return redirect(url_for("index"))
+
+    filter_acao = request.args.get('acao')
+    filter_usuario = request.args.get('usuario')
+    filter_data = request.args.get('data')
+
+    query_params = []
+    conditions = []
+    
+    base_query = """
+        SELECT * FROM historico
+    """
+
+    if filter_acao:
+        conditions.append("acao = %s")
+        query_params.append(filter_acao)
+    
+    if filter_usuario:
+        conditions.append("usuario = %s")
+        query_params.append(filter_usuario)
+
+    if filter_data:
+        conditions.append("DATE(datahora) = %s")
+        query_params.append(filter_data)
+
+    if conditions:
+        base_query += " WHERE " + " AND ".join(conditions)
+    
+    base_query += " ORDER BY datahora DESC"
+
+    historico_hoje = execute_query(base_query, tuple(query_params), fetchall=True)
 
     itens = execute_query("SELECT * FROM itens ORDER BY tipo ASC, nome ASC", fetchall=True)
     usuarios = execute_query("SELECT * FROM usuarios ORDER BY nome", fetchall=True)
-
-    total_itens = sum([item["quantidade"] for item in itens if item["tipo"] == "Consumivel"]) if itens else 0
-    total_itens += len([item for item in itens if item["tipo"] == "Duravel" and item["status"] == "Disponível"])
-    entradas_hoje = sum([h['quantidade'] for h in historico_hoje if h['acao'] == 'entrada']) if historico_hoje else 0
-    saidas_hoje = sum([h['quantidade'] for h in historico_hoje if h['acao'] in ['saida', 'emprestimo']]) if historico_hoje else 0
-    total_usuarios = len(usuarios) if usuarios else 0
+    
+    total_itens = sum([item["quantidade"] for item in itens if item["tipo"] == "Consumivel"]) + len([item for item in itens if item["tipo"] == "Duravel" and item["status"] == "Disponível"])
+    entradas_hoje = sum([h['quantidade'] for h in historico_hoje if h['acao'] == 'entrada'])
+    saidas_hoje = sum([h['quantidade'] for h in historico_hoje if h['acao'] in ['saida', 'emprestimo']])
+    total_usuarios = len(usuarios)
 
     return render_template("index.html",
                            itens=itens,
@@ -132,31 +193,120 @@ def index():
                            total_itens=total_itens,
                            entradas_hoje=entradas_hoje,
                            saidas_hoje=saidas_hoje,
-                           total_usuarios=total_usuarios)
+                           total_usuarios=total_usuarios,
+                           filter_acao=filter_acao,
+                           filter_usuario=filter_usuario,
+                           filter_data=filter_data)
 
 @app.route("/adicionar_usuario", methods=["POST"])
 def adicionar_usuario():
-    # ... (Sua lógica de adicionar usuário, mas usando 'execute_query') ...
+    try:
+        if request.form.get("senha") != ADMIN_PASSWORD:
+            flash("Senha incorreta. Não é possível adicionar o usuário.", "error")
+            return redirect(url_for("index"))
+        
+        nome = request.form["nome"].strip()
+        funcao = request.form["funcao"].strip()
+        execute_query("INSERT INTO usuarios (nome, funcao) VALUES (%s, %s)", (nome, funcao))
+        flash("Usuário adicionado com sucesso!", "success")
+    except psycopg2.Error as e:
+        flash(f"Ocorreu um erro ao adicionar o usuário: {e}", "error")
+        print(f"Erro ao adicionar usuário: {e}")
     return redirect(url_for("index"))
 
 @app.route("/excluir_usuario/<uuid:usuario_id>", methods=["POST"])
 def excluir_usuario(usuario_id):
-    # ... (Sua lógica de excluir usuário, mas usando 'execute_query') ...
+    try:
+        if request.form.get("senha") != ADMIN_PASSWORD:
+            flash("Senha incorreta. Não é possível excluir o usuário.", "error")
+            return redirect(url_for("index"))
+            
+        usuario_para_excluir = execute_query("SELECT nome FROM usuarios WHERE id=%s", (usuario_id,), fetchone=True)
+        
+        if usuario_para_excluir:
+            usuario_nome = usuario_para_excluir["nome"]
+            execute_query("DELETE FROM usuarios WHERE id=%s", (usuario_id,))
+            flash(f"Usuário '{usuario_nome}' excluído com sucesso!", "success")
+        else:
+            flash("Erro: Usuário não encontrado.", "error")
+    except psycopg2.Error as e:
+        flash(f"Ocorreu um erro ao excluir o usuário: {e}", "error")
+        print(f"Erro ao excluir usuário: {e}")
     return redirect(url_for("index"))
-    
+
 @app.route("/retirar/<uuid:item_id>", methods=["POST"])
 def retirar(item_id):
-    # ... (Sua lógica de retirar item, mas usando 'execute_query') ...
+    try:
+        qtd = int(request.form.get("quantidade", 1))
+        usuario = request.form.get("usuario", "Desconhecido")
+        destino = request.form.get("destino", "")
+        setor = request.form.get("setor", "")
+
+        item = execute_query("SELECT quantidade, tipo, status, nome FROM itens WHERE id=%s", (item_id,), fetchone=True)
+
+        if not item:
+            flash("Erro: Item não encontrado.", "error")
+            return redirect(url_for("index"))
+
+        if item["tipo"] == "Consumivel":
+            if item["quantidade"] >= qtd:
+                nova_quantidade = item["quantidade"] - qtd
+                execute_query("UPDATE itens SET quantidade = %s WHERE id=%s", (nova_quantidade, item_id))
+                execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, destino, setor, datahora) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                               (item_id, item["nome"], 'saida', qtd, usuario, destino, setor, datetime.now()))
+                flash("Item retirado com sucesso!", "success")
+            else:
+                flash("Erro: Quantidade insuficiente para item consumível.", "error")
+        
+        elif item["tipo"] == "Duravel":
+            if item["status"] == "Disponível":
+                execute_query("UPDATE itens SET status = 'Emprestado' WHERE id=%s", (item_id,))
+                execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, destino, setor, datahora) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                               (item_id, item["nome"], 'emprestimo', 1, usuario, destino, setor, datetime.now()))
+                flash("Item emprestado com sucesso!", "success")
+            else:
+                flash("Erro: Item durável já está emprestado.", "error")
+    except (psycopg2.Error, ValueError) as e:
+        flash(f"Ocorreu um erro: {e}", "error")
+        print(f"Erro ao processar retirada: {e}")
     return redirect(url_for("index"))
-    
+
 @app.route("/devolver/<uuid:item_id>", methods=["POST"])
 def devolver(item_id):
-    # ... (Sua lógica de devolver item, mas usando 'execute_query') ...
+    try:
+        usuario = request.form.get("usuario", "Desconhecido")
+        
+        item = execute_query("SELECT status, nome FROM itens WHERE id=%s", (item_id,), fetchone=True)
+
+        if item and item["status"] == "Emprestado":
+            execute_query("UPDATE itens SET status = 'Disponível' WHERE id=%s", (item_id,))
+            execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, datahora) VALUES (%s, %s, %s, %s, %s, %s)",
+                           (item_id, item["nome"], 'devolucao', 1, usuario, datetime.now()))
+            flash("Item devolvido com sucesso!", "success")
+        else:
+            flash("Erro: Item não pode ser devolvido ou não está emprestado.", "error")
+            print("Erro: Item não pode ser devolvido ou não está emprestado.")
+    except psycopg2.Error as e:
+        flash(f"Ocorreu um erro: {e}", "error")
+        print(f"Erro ao processar devolução: {e}")
     return redirect(url_for("index"))
 
 @app.route("/excluir/<uuid:item_id>", methods=["POST"])
 def excluir(item_id):
-    # ... (Sua lógica de excluir item, mas usando 'execute_query') ...
+    try:
+        item_para_excluir = execute_query("SELECT nome FROM itens WHERE id=%s", (item_id,), fetchone=True)
+        
+        if item_para_excluir:
+            item_nome = item_para_excluir["nome"]
+            execute_query("INSERT INTO historico (item_id, item_nome, acao, quantidade, usuario, destino, setor, datahora) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                           (item_id, item_nome, 'exclusao', 0, "Sistema/Admin", item_nome, "Item excluído", datetime.now()))
+            execute_query("DELETE FROM itens WHERE id=%s", (item_id,))
+            flash(f"Item '{item_nome}' excluído com sucesso!", "success")
+        else:
+            flash("Erro: Item não encontrado.", "error")
+    except psycopg2.Error as e:
+        flash(f"Ocorreu um erro ao excluir o item: {e}", "error")
+        print(f"Erro ao excluir item: {e}")
     return redirect(url_for("index"))
 
 @app.route("/projetos")
@@ -166,18 +316,42 @@ def projetos():
 
 @app.route("/adicionar_projeto", methods=["POST"])
 def adicionar_projeto():
-    # ... (Sua lógica de adicionar projeto, mas usando 'execute_query') ...
+    try:
+        nome = request.form["nome"].strip()
+        descricao = request.form["descricao"].strip()
+        prioridade = request.form["prioridade"]
+        status = request.form["status"]
+        
+        execute_query("INSERT INTO projetos (nome, descricao, prioridade, status) VALUES (%s, %s, %s, %s)",
+                       (nome, descricao, prioridade, status))
+        flash("Projeto adicionado com sucesso!", "success")
+    except psycopg2.Error as e:
+        flash(f"Erro ao adicionar projeto: {e}", "error")
     return redirect(url_for("projetos"))
 
 @app.route("/editar_projeto/<uuid:projeto_id>", methods=["POST"])
 def editar_projeto(projeto_id):
-    # ... (Sua lógica de editar projeto, mas usando 'execute_query') ...
+    try:
+        nome = request.form["nome"].strip()
+        descricao = request.form["descricao"].strip()
+        prioridade = request.form["prioridade"]
+        status = request.form["status"]
+
+        execute_query("UPDATE projetos SET nome = %s, descricao = %s, prioridade = %s, status = %s WHERE id = %s",
+                       (nome, descricao, prioridade, status, projeto_id))
+        flash("Projeto editado com sucesso!", "success")
+    except psycopg2.Error as e:
+        flash(f"Erro ao editar projeto: {e}", "error")
     return redirect(url_for("projetos"))
 
 @app.route("/excluir_projeto/<uuid:projeto_id>", methods=["POST"])
 def excluir_projeto(projeto_id):
-    # ... (Sua lógica de excluir projeto, mas usando 'execute_query') ...
+    try:
+        execute_query("DELETE FROM projetos WHERE id = %s", (projeto_id,))
+        flash("Projeto excluído com sucesso!", "success")
+    except psycopg2.Error as e:
+        flash(f"Erro ao excluir projeto: {e}", "error")
     return redirect(url_for("projetos"))
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=os.environ.get("PORT", 5000), debug=True)
