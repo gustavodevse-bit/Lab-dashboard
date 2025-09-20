@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <title>Projetos - Controle_Lab_SE</title>
+</head>
+<body>
+    <div class="sidebar">
+        <a href="{{ url_for('index') }}" class="logo">
+            <i class='bx bx-bot'></i>
+            <div class="logo-name"><span>LAB</span>TEC</div>
+        </a>
+        <ul class="side-menu">
+            <li><a href="{{ url_for('index') }}"><i class='bx bxs-dashboard'></i>Controle</a></li>
+            <li><a href="#"><i class='bx bx-store-alt'></i>Compras</a></li>
+            <li><a href="#"><i class='bx bx-analyse'></i>Analytics</a></li>
+            <li class="active"><a href="{{ url_for('projetos') }}"><i class='bx bx-message-square-dots'></i>Projetos</a></li>
+            <li><a href="#"><i class='bx bx-group'></i>Usuários</a></li>
+            <li><a href="#"><i class='bx bx-cog'></i>Configurações</a></li>
+        </ul>
+        <ul class="side-menu">
+            <li>
+                <a href="#" class="logout">
+                    <i class='bx bx-log-out-circle'></i>Logout
+                </a>
+            </li>
+        </ul>
+    </div>
+    
+    <div class="content">
+        <nav>
+            <i class='bx bx-menu'></i>
+            <form action="#">
+                <div class="form-input">
+                    <input type="search" placeholder="Buscar...">
+                    <button class="search-btn"><i class='bx bx-search'></i></button>
+                </div>
+            </form>
+            <input type="checkbox" id="theme-toggle" hidden>
+            <label for="theme-toggle" class="theme-toggle"></label>
+            <a href="#" class="notif">
+                <i class='bx bx-bell'></i>
+                <span class="count">0</span>
+            </a>
+        </nav>
+
+        <main>
+
+            <div class="header">
+                <div class="left">
+                    <h1>Projetos do Laboratório</h1>
+                    <ul class="breadcrumb">
+                        <li><a href="{{ url_for('index') }}">Controle</a></li>
+                        /
+                        <li><a href="#" class="active">Projetos</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="bottom-data">
+                <div class="orders">
+                    <div class="header">
+                        <i class='bx bx-folder'></i>
+                        <h3>Adicionar Novo Projeto</h3>
+                    </div>
+                    <form method="POST" action="{{ url_for('adicionar_projeto') }}" class="form-add-projeto">
+                        <input type="text" name="nome" placeholder="Nome do Projeto" required>
+                        <textarea name="descricao" placeholder="Descrição do Projeto"></textarea>
+                        <select name="prioridade" required>
+                            <option value="Baixa">Prioridade: Baixa</option>
+                            <option value="Média">Prioridade: Média</option>
+                            <option value="Alta">Prioridade: Alta</option>
+                        </select>
+                        <select name="status" required>
+                            <option value="Pendente">Status: Pendente</option>
+                            <option value="Em andamento">Status: Em andamento</option>
+                            <option value="Concluído">Status: Concluído</option>
+                        </select>
+                        <button type="submit" class="btn-primary">Adicionar Projeto</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="bottom-data">
+                <div class="orders">
+                    <div class="header">
+                        <i class='bx bx-folder'></i>
+                        <h3>Lista de Projetos</h3>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome do Projeto</th>
+                                <th>Descrição</th>
+                                <th>Prioridade</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for projeto in projetos %}
+                            <tr>
+                                <td>{{ projeto.nome }}</td>
+                                <td>{{ projeto.descricao }}</td>
+                                <td><span class="tag prioridade-{{ projeto.prioridade|lower|replace('á', 'a') }}">{{ projeto.prioridade }}</span></td>
+                                <td><span class="tag status-{{ projeto.status|lower|replace(' ', '-') }}">{{ projeto.status }}</span></td>
+                                <td class="actions-cell">
+                                    <button class="btn-edit" onclick="showEditModal({{ projeto.id }}, '{{ projeto.nome }}', '{{ projeto.descricao }}', '{{ projeto.prioridade }}', '{{ projeto.status }}')">Editar</button>
+                                    <form method="POST" action="{{ url_for('excluir_projeto', projeto_id=projeto.id) }}" style="display:inline-block;">
+                                        <button type="submit" class="btn-delete" onclick="return confirm('Tem certeza que deseja excluir este projeto?');"><i class='bx bx-trash'></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeEditModal()">&times;</span>
+            <h2>Editar Projeto</h2>
+            <form id="editForm" method="POST">
+                <input type="text" name="nome" id="edit-nome" placeholder="Nome do Projeto" required>
+                <textarea name="descricao" id="edit-descricao" placeholder="Descrição do Projeto"></textarea>
+                <select name="prioridade" id="edit-prioridade" required>
+                    <option value="Baixa">Prioridade: Baixa</option>
+                    <option value="Média">Prioridade: Média</option>
+                    <option value="Alta">Prioridade: Alta</option>
+                </select>
+                <select name="status" id="edit-status" required>
+                    <option value="Pendente">Status: Pendente</option>
+                    <option value="Em andamento">Status: Em andamento</option>
+                    <option value="Concluído">Status: Concluído</option>
+                </select>
+                <button type="submit" class="btn-primary">Salvar Alterações</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+    <script>
+        function showEditModal(id, nome, descricao, prioridade, status) {
+            document.getElementById('edit-nome').value = nome;
+            document.getElementById('edit-descricao').value = descricao;
+            document.getElementById('edit-prioridade').value = prioridade;
+            document.getElementById('edit-status').value = status;
+            document.getElementById('editForm').action = `{{ url_for('editar_projeto', projeto_id=0) }}`.replace('/0', `/${id}`);
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

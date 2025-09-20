@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <title>Controle_Lab_SE</title>
+</head>
+
+<body>
+
+    <div class="sidebar">
+        <a href="{{ url_for('index') }}" class="logo">
+            <i class='bx bx-bot'></i>
+            <div class="logo-name"><span>LAB</span>TEC</div>
+        </a>
+        <ul class="side-menu">
+            <li class="active"><a href="{{ url_for('index') }}"><i class='bx bxs-dashboard'></i>Controle</a></li>
+            <li><a href="#"><i class='bx bx-store-alt'></i>Compras</a></li>
+            <li><a href="#"><i class='bx bx-analyse'></i>Analytics</a></li>
+            <li><a href="{{ url_for('projetos') }}"><i class='bx bx-message-square-dots'></i>Projetos</a></li>
+            <li><a href="#"><i class='bx bx-group'></i>Usuários</a></li>
+            <li><a href="#"><i class='bx bx-cog'></i>Configurações</a></li>
+        </ul>
+        <ul class="side-menu">
+            <li>
+                <a href="{{ url_for('index') }}" class="logout">
+                    <i class='bx bx-log-out-circle'></i>Sair
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="content">
+        <nav>
+            <i class='bx bx-menu'></i>
+            <form action="#">
+                <div class="form-input">
+                    <input type="search" placeholder="Buscar...">
+                    <button class="search-btn"><i class='bx bx-search'></i></button>
+                </div>
+            </form>
+            <input type="checkbox" id="theme-toggle" hidden>
+            <label for="theme-toggle" class="theme-toggle"></label>
+            <a href="#" class="notif">
+                <i class='bx bx-bell'></i>
+                <span class="count">0</span>
+            </a>
+    
+        </nav>
+
+        <main>
+            <div class="header">
+                <div class="left">
+                    <h1>Dashboard do Laboratório</h1>
+                    <ul class="breadcrumb">
+                        <li><a href="#">Controle</a></li>
+                        /
+                        <li><a href="#" class="active">Estoque</a></li>
+                    </ul>
+                </div>
+                <a href="#" class="report">
+                    <i class='bx bx-cloud-download'></i>
+                    <span>Exportar CSV</span>
+                </a>
+            </div>
+
+            <ul class="insights">
+                <li>
+                    <i class='bx bx-box'></i>
+                    <span class="info">
+                        <h3>{{ total_itens|default(0) }}</h3>
+                        <p>Itens em Estoque</p>
+                    </span>
+                </li>
+                <li>
+                    <i class='bx bx-trending-up'></i>
+                    <span class="info">
+                        <h3>{{ entradas_hoje|default(0) }}</h3>
+                        <p>Entradas Hoje</p>
+                    </span>
+                </li>
+                <li>
+                    <i class='bx bx-trending-down'></i>
+                    <span class="info">
+                        <h3>{{ saidas_hoje|default(0) }}</h3>
+                        <p>Saídas Hoje</p>
+                    </span>
+                </li>
+                <li>
+                    <i class='bx bx-user'></i>
+                    <span class="info">
+                        <h3>{{ total_usuarios|default(0) }}</h3>
+                        <p>Usuários Ativos</p>
+                    </span>
+                </li>
+            </ul>
+
+            <div class="bottom-data">
+                <div class="orders">
+                    <div class="header">
+                        <i class='bx bx-plus-circle'></i>
+                        <h3>Adicionar Novo Item</h3>
+                    </div>
+                    <form method="POST" action="/" class="form-add-item">
+                        <input type="text" name="nome" placeholder="Nome do item" required>
+                        <select name="tipo" required onchange="toggleQuantidade(this)">
+                            <option value="Consumivel">Tipo: Consumível</option>
+                            <option value="Duravel">Tipo: Durável</option>
+                        </select>
+                        <input type="number" name="quantidade" min="1" placeholder="Quantidade" required>
+                        <input type="text" name="categoria" placeholder="Categoria">
+                        <select name="usuario" required>
+                            <option value="">Usuário</option>
+                            {% for u in usuarios %}
+                            <option value="{{ u.nome }}">{{ u.nome }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn-primary">Adicionar</button>
+                    </form>
+                </div>
+                <div class="orders">
+                    <div class="header">
+                        <i class='bx bx-receipt'></i>
+                        <h3>Estoque Atual</h3>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Tipo</th>
+                                <th>Qtd</th>
+                                <th>Categoria</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in itens %}
+                            <tr class="{% if item.tipo == 'Consumivel' and item.quantidade < 5 %}item-low-stock{% endif %}">
+                                <td>{{ item.nome }}</td>
+                                <td><span class="type-tag {{ item.tipo|lower }}">{{ item.tipo }}</span></td>
+                                <td>
+                                    {% if item.tipo == 'Duravel' %}
+                                        <span class="status-tag {{ item.status|lower }}">{{ item.status }}</span>
+                                    {% else %}
+                                        {{ item.quantidade }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.categoria }}</td>
+                                <td class="actions-cell">
+                                    {% if item.tipo == 'Consumivel' %}
+                                    <form method="POST" action="/retirar/{{ item.id }}" class="form-retirar">
+                                        <input type="number" name="quantidade" min="1" placeholder="Qtd" required>
+                                        <input type="text" name="destino" placeholder="Destino" required>
+                                        <input type="text" name="setor" placeholder="Setor" required>
+                                        <input type="text" name="usuario" placeholder="Solicitante" required>
+                                        <button type="submit" class="btn-danger">Retirar</button>
+                                    </form>
+                                    {% elif item.tipo == 'Duravel' %}
+                                        {% if item.status == 'Disponível' %}
+                                        <form method="POST" action="/retirar/{{ item.id }}" class="form-retirar">
+                                            <input type="text" name="destino" placeholder="Destino" required>
+                                            <input type="text" name="setor" placeholder="Setor" required>
+                                            <input type="text" name="usuario" placeholder="Solicitante" required>
+                                            <button type="submit" class="btn-danger">Emprestar</button>
+                                        </form>
+                                        {% else %}
+                                        <form method="POST" action="/devolver/{{ item.id }}" class="form-devolver">
+                                            <input type="text" name="usuario" placeholder="Devolvedor" required>
+                                            <button type="submit" class="btn-success">Devolver</button>
+                                        </form>
+                                        {% endif %}
+                                    {% endif %}
+                                    <form method="POST" action="/excluir/{{ item.id }}" class="form-excluir" onsubmit="return confirm('Tem certeza que deseja excluir este item?');">
+                                        <button type="submit" class="btn-delete"><i class='bx bx-trash'></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bottom-data">
+                <div class="reminders">
+                    <div class="header">
+                        <i class='bx bx-user'></i>
+                        <h3>Usuários Ativos</h3>
+                    </div>
+                    <form method="POST" action="/adicionar_usuario" class="form-add-user">
+                        <input type="text" name="nome" placeholder="Nome do usuário" required>
+                        <input type="text" name="funcao" placeholder="Função" required>
+                        <input type="password" name="senha" placeholder="Senha de Admin" required>
+                        <button type="submit" class="btn-primary">Adicionar Usuário</button>
+                    </form>
+                    <ul class="task-list">
+                        {% for u in usuarios %}
+                        <li class="user-item">
+                            <i class='bx bx-user-circle'></i>
+                            <p>{{ u.nome }} - {{ u.funcao }}</p>
+                            <form method="POST" action="/excluir_usuario/{{ u.id }}" class="form-excluir-user">
+                                <input type="password" name="senha" placeholder="Senha" required>
+                                <button type="submit" class="btn-delete" onclick="return confirm('Tem certeza que deseja excluir o usuário {{ u.nome }}?');">
+                                    <i class='bx bx-trash'></i>
+                                </button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="reminders">
+                    <div class="header">
+                        <i class='bx bx-history'></i>
+                        <h3>Histórico de Movimentações</h3>
+                    </div>
+                    <form method="GET" action="{{ url_for('index') }}" class="historico-filtro">
+                        <select name="acao">
+                            <option value="">Ação: Todas</option>
+                            <option value="entrada" {% if filter_acao == 'entrada' %}selected{% endif %}>Entrada</option>
+                            <option value="saida" {% if filter_acao == 'saida' %}selected{% endif %}>Saída</option>
+                            <option value="emprestimo" {% if filter_acao == 'emprestimo' %}selected{% endif %}>Empréstimo</option>
+                            <option value="devolucao" {% if filter_acao == 'devolucao' %}selected{% endif %}>Devolução</option>
+                            <option value="exclusao" {% if filter_acao == 'exclusao' %}selected{% endif %}>Exclusão</option>
+                        </select>
+                        <select name="usuario">
+                            <option value="">Usuário: Todos</option>
+                            {% for u in usuarios %}
+                            <option value="{{ u.nome }}" {% if filter_usuario == u.nome %}selected{% endif %}>{{ u.nome }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="date" name="data" value="{{ filter_data }}">
+                        <button type="submit" class="btn-filtrar">Filtrar</button>
+                        <a href="{{ url_for('index') }}" class="btn-limpar">Limpar Filtro</a>
+                    </form>
+                    <ul class="task-list">
+                        {% for h in historico %}
+                        <li class="{% if h.acao=='entrada' %}completed{% elif h.acao=='saida' or h.acao=='emprestimo' %}not-completed{% else %}system-action{% endif %}">
+                            <div class="task-title">
+                                <i class='bx {% if h.acao=='entrada' %}bx-arrow-from-bottom{% elif h.acao=='saida' %}bx-arrow-to-bottom{% elif h.acao=='emprestimo' %}bx-download{% elif h.acao=='devolucao' %}bx-upload{% else %}bx-info-circle{% endif %}'></i>
+                                <p>
+                                    {{ h.usuario }} 
+                                    {% if h.acao=='entrada' %}
+                                        adicionou {{ h.quantidade }} de {{ h.item_nome }}
+                                    {% elif h.acao=='saida' %}
+                                        retirou {{ h.quantidade }} de {{ h.item_nome }} para o {{ h.setor }} (Destino: {{ h.destino }})
+                                    {% elif h.acao=='emprestimo' %}
+                                        retirou o item {{ h.item_nome }} para o {{ h.setor }} (Destino: {{ h.destino }})
+                                    {% elif h.acao=='devolucao' %}
+                                        devolveu o item {{ h.item_nome }}
+                                    {% elif h.acao=='exclusao' %}
+                                        excluiu o item {{ h.item_nome }}
+                                    {% endif %}
+                                </p>
+                                <span class="time">{{ h.datahora }}</span>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+    <script>
+        function toggleQuantidade(selectElement) {
+            const quantidadeInput = selectElement.nextElementSibling;
+            if (selectElement.value === 'Duravel') {
+                quantidadeInput.style.display = 'none';
+                quantidadeInput.removeAttribute('required');
+            } else {
+                quantidadeInput.style.display = 'inline-block';
+                quantidadeInput.setAttribute('required', 'required');
+            }
+        }
+    </script>
+</body>
+</html>
